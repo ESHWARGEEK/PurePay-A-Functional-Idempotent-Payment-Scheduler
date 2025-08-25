@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { INITIAL_SUBSCRIPTIONS, INITIAL_TRANSACTIONS } from './constants';
-import type { Subscription, Transaction, TransactionStatus, Frequency } from './types';
+import type { Subscription, Transaction, Frequency } from './types';
 import { TransactionStatus as TStatus } from './types';
 import Dashboard from './components/Dashboard';
 import Header from './components/Header';
@@ -25,85 +24,90 @@ const App: React.FC = () => {
   const processPayments = useCallback(() => {
     if (isProcessing) return;
 
-    setIsProcessing(true);
     const now = new Date();
-
-    // Find due transactions (pending and scheduled for today or earlier)
     const dueTransactionIds = transactions
-      .filter(t => (t.status === TStatus.PENDING || t.status === TStatus.RETRYING) && new Date(t.scheduledDate) <= now)
-      .map(t => t.id);
+      .filter((t: Transaction) => (t.status === TStatus.PENDING || t.status === TStatus.RETRYING) && new Date(t.scheduledDate) <= now)
+      .map((t: Transaction) => t.id);
 
     if (dueTransactionIds.length === 0) {
-      setIsProcessing(false);
       return;
     }
     
+    setIsProcessing(true);
+
     // 1. Move due transactions to "Processing"
-    setTransactions(prev =>
-      prev.map(t =>
+    setTransactions((prev: Transaction[]) =>
+      prev.map((t: Transaction) =>
         dueTransactionIds.includes(t.id) ? { ...t, status: TStatus.PROCESSING } : t
       )
     );
 
     // 2. Simulate payment gateway interaction
     setTimeout(() => {
-      setTransactions(prev =>
-        prev.map(t => {
-          if (!dueTransactionIds.includes(t.id)) return t;
-
-          const isSuccess = Math.random() > 0.2; // 80% success rate
-          
-          if (isSuccess) {
-            return { ...t, status: TStatus.SUCCEEDED };
-          } else {
-            const newAttempts = (t.attempts || 0) + 1;
-            if (newAttempts >= 3) {
-              return { ...t, status: TStatus.FAILED, attempts: newAttempts };
-            } else {
-               const nextRetryDate = new Date(now.getTime() + 60 * 1000); // Retry in 1 minute
-               return { ...t, status: TStatus.RETRYING, attempts: newAttempts, scheduledDate: nextRetryDate.toISOString() };
-            }
-          }
-        })
-      );
-
-      // 3. Update subscriptions for successful recurring payments
-      setSubscriptions(prevSubs => {
-        const successfulSubscriptionTransactionIds = transactions
-          .filter(t => dueTransactionIds.includes(t.id) && t.subscriptionId)
-          .map(t => t.subscriptionId);
-        
-        const successfulNow = transactions.filter(t => dueTransactionIds.includes(t.id) && t.status === TStatus.PROCESSING && Math.random() > 0.2).map(t => t.subscriptionId);
-
-
-        return prevSubs.map(sub => {
-          if (successfulNow.includes(sub.id)) {
-            const nextBillingDate = calculateNextBillingDate(new Date(sub.nextBillingDate), sub.frequency);
-            
-            // Create a new transaction for the next billing cycle
-            const newTransaction: Transaction = {
-              id: `txn_${Date.now()}_${Math.random()}`,
-              subscriptionId: sub.id,
-              customerName: sub.customerName,
-              amount: sub.amount,
-              currency: sub.currency,
-              scheduledDate: nextBillingDate.toISOString(),
-              status: TStatus.PENDING,
-              idempotencyKey: `${sub.id}_${nextBillingDate.toISOString().split('T')[0]}`,
-              attempts: 0,
-            };
-            setTransactions(prevTxns => [...prevTxns, newTransaction]);
-            
-            return { ...sub, nextBillingDate: nextBillingDate.toISOString() };
-          }
-          return sub;
-        });
+      const outcomes = new Map<string, boolean>();
+      dueTransactionIds.forEach((id: string) => {
+          outcomes.set(id, Math.random() > 0.2); // 80% success rate
       });
 
+      const successfulSubIds = new Set<string>();
+      const newTransactionsForNextCycle: Transaction[] = [];
+
+      // Pre-calculate renewals for successful subscription payments
+      transactions.forEach((t: Transaction) => {
+          if (t.subscriptionId && outcomes.get(t.id) === true) {
+              const sub = subscriptions.find((s: Subscription) => s.id === t.subscriptionId);
+              if (sub) {
+                  successfulSubIds.add(sub.id);
+                  const nextBillingDate = calculateNextBillingDate(new Date(sub.nextBillingDate), sub.frequency);
+                  newTransactionsForNextCycle.push({
+                      id: `txn_${Date.now()}_${Math.random()}`,
+                      subscriptionId: sub.id,
+                      customerName: sub.customerName,
+                      amount: sub.amount,
+                      currency: sub.currency,
+                      scheduledDate: nextBillingDate.toISOString(),
+                      status: TStatus.PENDING,
+                      idempotencyKey: `${sub.id}_${nextBillingDate.toISOString().split('T')[0]}`,
+                      attempts: 0,
+                  });
+              }
+          }
+      });
+      
+      // Update subscriptions based on successful payments
+      setSubscriptions((prevSubs: Subscription[]) => prevSubs.map((sub: Subscription) => {
+          if (successfulSubIds.has(sub.id)) {
+              const nextBillingDate = calculateNextBillingDate(new Date(sub.nextBillingDate), sub.frequency);
+              return { ...sub, nextBillingDate: nextBillingDate.toISOString() };
+          }
+          return sub;
+      }));
+
+      // Update transactions with their final status and add new ones for next cycle
+      setTransactions((prevTxns: Transaction[]) => {
+          const updatedTxns = prevTxns.map((t: Transaction) => {
+              if (outcomes.has(t.id)) { // It's a due transaction
+                  const isSuccess = outcomes.get(t.id)!;
+                  if (isSuccess) {
+                      return { ...t, status: TStatus.SUCCEEDED };
+                  } else {
+                      const newAttempts = (t.attempts || 0) + 1;
+                      if (newAttempts >= 3) {
+                          return { ...t, status: TStatus.FAILED, attempts: newAttempts };
+                      } else {
+                          const nextRetryDate = new Date(new Date().getTime() + 60 * 1000);
+                          return { ...t, status: TStatus.RETRYING, attempts: newAttempts, scheduledDate: nextRetryDate.toISOString() };
+                      }
+                  }
+              }
+              return t;
+          });
+          return [...updatedTxns, ...newTransactionsForNextCycle];
+      });
 
       setIsProcessing(false);
     }, 2000); // Simulate 2-second API call
-  }, [transactions, isProcessing]);
+  }, [transactions, subscriptions, isProcessing]);
 
   // Scheduler runs every 5 seconds to check for payments
   useEffect(() => {
@@ -137,8 +141,8 @@ const App: React.FC = () => {
               attempts: 0
           };
 
-          setSubscriptions(prev => [...prev, newSubscription]);
-          setTransactions(prev => [...prev, firstTransaction]);
+          setSubscriptions((prev: Subscription[]) => [...prev, newSubscription]);
+          setTransactions((prev: Transaction[]) => [...prev, firstTransaction]);
 
       } else {
           const trans = payment as Omit<Transaction, 'id' | 'status' | 'idempotencyKey' | 'attempts'>;
@@ -149,7 +153,7 @@ const App: React.FC = () => {
               idempotencyKey: `one-time_${trans.customerName.replace(/\s/g, '')}_${new Date(trans.scheduledDate).toISOString()}`,
               attempts: 0,
           };
-          setTransactions(prev => [...prev, newTransaction]);
+          setTransactions((prev: Transaction[]) => [...prev, newTransaction]);
       }
   };
 
