@@ -1,0 +1,5 @@
+{
+  "name": "Copy of PurePay: Functional Payment Scheduler",
+  "description": "A dashboard to visualize and manage a functional, idempotent payment scheduler for recurring subscriptions and one-time transactions.",
+  "requestFramePermissions": []
+}
