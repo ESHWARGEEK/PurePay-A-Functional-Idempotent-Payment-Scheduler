@@ -2,7 +2,10 @@
 
 A dashboard to visualize and manage a functional, idempotent payment scheduler for recurring subscriptions and one-time transactions. This project is a front-end simulation of a payment processing system, showcasing the logic behind handling recurring and one-time payments automatically.
 
-![PurePay Screenshot](https://storage.googleapis.com/pr-prd-filestore-f922/github/com/google/generative-ai-docs/files/a6589578-1960-4965-b74a-f2b740520a06/PurePay-Screenshot.png)
+<img width="633" height="706" alt="Screenshot 2025-08-25 104908" src="https://github.com/user-attachments/assets/9d646796-f3e2-4f4f-8e5c-596368a5d8ae" />
+<img width="626" height="702" alt="Screenshot 2025-08-25 104922" src="https://github.com/user-attachments/assets/217b5311-e5ad-4025-accb-9625dd446750" />
+
+
 
 ## ✨ Features
 
